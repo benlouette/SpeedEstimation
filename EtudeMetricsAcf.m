@@ -1,5 +1,5 @@
-close all;
-clear;
+% close all;
+% clear;
 Fs = 12000;
 fmin        = 0.5;     % bande de recherche (Hz)
 fmax        = 120;     % bande de recherche (Hz)
@@ -24,14 +24,14 @@ freqRot4 = 1725/60; % tours/min → Hz
 array4A=test4.X100_DE_time;
 array4B=test4.X100_FE_time;
 %
-array   =   array3B;
-freqRot = freqRot3 ;
-ISPLOTING = true;
+array   =   array4B;
+freqRot = freqRot2 ;
+ISPLOTING = false;
 
 sizeSlide=8192*2;
 n=floor(numel(array)/sizeSlide);
 
-for slide_idx = 29:29
+for slide_idx = 1:n
     
     accOrigi=array((sizeSlide*(slide_idx-1))+1:(sizeSlide*slide_idx));
     [ c_q, q_axis] = coarse_cepstrum_f0(accOrigi, Fs, [0.5 120], 'Win','hann','Dither',1e-3);
@@ -54,51 +54,61 @@ for slide_idx = 29:29
         plot_pick_best_comb(res, Opt, 10);
     end
     M = 10;
-%     % b) Version filtres FIR (zéro-phase)
-%     [S_fir, info_fir] = split_top_candidates(accOrigi, Fs, res, ...
-%         'NumSignals',M, 'Method','fir', 'FIR_Order',512, ...
-%         'WidthFactor',3, 'TransWidthHz',0.15, 'K',3);
-%     % a) Version rapide FFT/IFFT (offline)
-    [S_fft, info_fft] = split_top_candidates(accOrigi, Fs, res, ...
-        'NumSignals',10, 'Method','fft', 'WidthFactor',3, 'K',3);
+    %     % b) Version filtres FIR (zéro-phase)
+    %     [S_fir, info_fir] = split_top_candidates(accOrigi, Fs, res, ...
+    %         'NumSignals',M, 'Method','fir', 'FIR_Order',512, ...
+    %         'WidthFactor',3, 'TransWidthHz',0.15, 'K',3);
+    %     % a) Version rapide FFT/IFFT (offline)
+%     [S_fft, info_fft] = split_top_candidates(accOrigi, Fs, res, ...
+%         'NumSignals',10, 'Method','fft', 'WidthFactor',3, 'K',3);
     
-%     w = [0.25 0.25 0.20 0.15 0.15];   % [Qspec Qent Qsfm Qpksep Qprom]
+    %     w = [0.25 0.25 0.20 0.15 0.15];   % [Qspec Qent Qsfm Qpksep Qprom]
     TopK = 5;
-%     metrics = repmat(struct( ...
-%         'Qspec',0,'Qent',0,'Qsfm',0,'Qpksep',0,'Qprom',0, ...
-%         'Score',0,'acf',[],'lags',[],'info',struct()), 1, M);
+    %     metrics = repmat(struct( ...
+    %         'Qspec',0,'Qent',0,'Qsfm',0,'Qpksep',0,'Qprom',0, ...
+    %         'Score',0,'acf',[],'lags',[],'info',struct()), 1, M);
     metrics = repmat(...
-    struct('Qspec',0,'Qent',0,'Qsfm',0,'Qpksep',0,'Qprom',0, 'Qharm',0,'Tharm',0,...
-           'debug',[], 'acf',[],'lags',[],'info',struct()), 1, M);
+        struct('Qspec',0,'Qent',0,'Qsfm',0,'Qpksep',0,'Qprom',0, 'Qharm',0,'Tharm',0,...
+        'debug',[], 'acf',[],'lags',[],'info',struct()), 1, M);
+    
     w = struct('spec',0.2,'ent',0.0,'sfm',0.0,'pksep',0.0,'prom',0.00,'harm',0.0);
+    metrics2 = struct('Regularity',0,'P2B',0,'DecayR2',0,'PromQuality',0, ...
+        'ZCPerInt',0,'score_pos',0,'Suspect2T',false,'intervals_mean',0);
     for m = 1:M
-        accFir = S_fft(:,m);
-         lags = 0:numel(accFir)-1;
-        signalEnvelope = getEnv(accFir, Fs,  info_fft.fc_Hz(m));% res.best.fc BEST.band(1)-50);  %   extracts the envelope
+%         accFir = S_fft(:,m);
+signalEnvelope = getEnvCut(accOrigi, Fs,  res.candidates.fc_Hz(m),fmax);
         [r] = nsdf_mcleod_fast(signalEnvelope, Fs, 0, 160, numel(signalEnvelope));
         if ISPLOTING
-        figure;
-        plot(r);
-        title(num2str(m));
+            figure;
+            plot(r);
+            title(num2str(m));
         end
         % --- métriques ACF (robustes) ---
         Mx = acf_quality_metrics2(r);         % fonction B ci-dessous
-        Mx2 = acf_temporal_metrics(r);
+        [info2,Mx2 ] = acf_temporal_metrics(r);
+        metrics2(m).Regularity = Mx2.Regularity;
+        metrics2(m).P2B = Mx2.P2B;
+        metrics2(m).DecayR2 = Mx2.DecayR2;
+        metrics2(m).PromQuality = Mx2.PromQuality;
+        metrics2(m).ZCPerInt = Mx2.ZCPerInt;
+        metrics2(m).score_pos = Mx2.score_pos;
+        metrics2(m).Suspect2T = Mx2.Suspect2T;
+        metrics2(m).intervals_mean = info2.intervals_mean;
+        
         metrics(m).Qspec = Mx.Qspec;
         metrics(m).Qent  = Mx.Qent;
-        metrics(m).Qsfm  = Mx2.Score;
-        metrics(m).Qpksep= Mx2.Flags.Suspect2T;
+        metrics(m).Qsfm  = Mx.Qsfm;
+        metrics(m).Qpksep= Mx.Qpksep;
         metrics(m).Qprom = Mx.Qprom;
         metrics(m).Qharm = Mx.Qharm;
         metrics(m).Tharm = Mx.Tharm;
         metrics(m).acf = r;
         metrics(m).lags = lags;
-        metrics(m).debug = Mx.debug;
         % weighted decision (adjust weights to taste)
-
-
+        
+        
         metrics(m).Score = w.spec*Mx.Qspec + w.ent*Mx.Qent + w.sfm*Mx.Qsfm + ...
-     w.pksep*Mx.Qpksep + w.prom*Mx.Qprom + w.harm*Mx.Qharm;
+            w.pksep*Mx.Qpksep + w.prom*Mx.Qprom + w.harm*Mx.Qharm;
     end
     
     % --- tableau + tri ---
@@ -110,6 +120,31 @@ for slide_idx = 29:29
     Qharm = [metrics.Qharm]';
     Tharm = [metrics.Tharm]';
     Score = [metrics.Score]';
+    % Supposons que tu aies déjà calculé M(i) = acf_temporal_metrics(r_i) pour i=1..10
+    % MetricsArray = [M1, M2, ..., M10];  % tableau struct 1x10 ou 10x1
+    MetricsInterval = [metrics2.intervals_mean]';
+    MetricsRegular = [metrics2.Regularity]';
+    MetricsPromQuality = [metrics2.PromQuality]';
+    [MetricsRegularsort ,idx] = sort(MetricsRegular,'descend');
+    MetricsIntervalsort = MetricsInterval(idx);
+    probableMean = median(MetricsIntervalsort(1:3)); % les trois meilleur régularité.
+    k = (MetricsInterval / probableMean);
+    mask = (logical(k >= 0.8) & logical(k <= 1.2));
+    MetricsRegular(~mask)= 0;
+    MetricsPromQuality(~mask)= 0;
+    
+    
+    
+    % [T_hat, labels, k_nearest, weights, score, details] = acf_period_consensus_from_metrics(MetricsArray,[metrics2.Regularity]');
+    
+    
+    % T_hat          % période de base estimée
+    % labels         % {'T','2T','kT','outlier', ...}
+    % k_nearest      % multiples entiers (1,2,3,...)
+    % weights        % poids (somme = 1), plus haut => ACF jugée plus fiable
+    % score          % score global de la solution
+    
+    Score2 = MetricsRegular  + MetricsPromQuality ;
     
     idx = (1:M).';
     ranked = table(idx, Score, Qspec, Qent, Qsfm, Qpksep, Qprom, ...
@@ -118,56 +153,104 @@ for slide_idx = 29:29
     
     % --- plots (optionnels) ---
     if ISPLOTING
-         figure;
-
-subplot(4,2,1);
-plot(Qspec, 'b');
-ylabel('Qspec');
-title('Qspec');
-
-subplot(4,2,2);
-plot(Qent, 'r');
-ylabel('Qent');
-title('Qent');
-
-subplot(4,2,3);
-plot(Qsfm, 'g');
-ylabel('Qsfm');
-title('Qsfm');
-
-subplot(4,2,4);
-plot(Qpksep, 'm');
-ylabel('Qpksep');
-title('Qpksep');
-
-subplot(4,2,5);
-plot(Qprom, 'c');
-ylabel('Qprom');
-title('Qprom');
-
-subplot(4,2,6);
-plot(Qharm, 'k');
-ylabel('Qharm');
-title('Qharm');
-
-subplot(4,2,7);
-plot(Tharm, 'b--');
-ylabel('Tharm');
-title('Tharm');
-
-subplot(4,2,8);
-plot(Score, 'r--');
-ylabel('Score');
-title('Score');
-
-% Titre global
-sgtitle('ACF Quality Metrics');
-
+        figure;
+        
+        subplot(4,2,1);
+        plot([metrics2.Regularity]', 'b');
+        ylabel('Regularity');
+        title('Regularity');
+        
+        subplot(4,2,2);
+        plot([metrics2.P2B]', 'r');
+        ylabel('P2B');
+        title('P2B');
+        
+        subplot(4,2,3);
+        plot([metrics2.DecayR2]', 'g');
+        ylabel('DecayR2');
+        title('DecayR2');
+        
+        subplot(4,2,4);
+        plot([metrics2.PromQuality]', 'm');
+        ylabel('PromQuality');
+        title('PromQuality');
+        
+        subplot(4,2,5);
+        plot([metrics2.ZCPerInt]', 'c');
+        ylabel('ZCPerInt');
+        title('ZCPerInt');
+        
+        subplot(4,2,6);
+        plot([metrics2.score_pos]', 'k');
+        ylabel('score_pos');
+        title('score_pos');
+        
+        subplot(4,2,7);
+        plot([metrics2.Suspect2T]', 'b--');
+        ylabel('Suspect2T');
+        title('Suspect2T');
+        subplot(4,2,8);
+        plot([metrics2.intervals_mean]', 'b--');
+        ylabel('intervals_mean');
+        title('intervals_mean');
+        
+        
+        
+        
+        figure;
+        
+        subplot(4,2,1);
+        plot(Qspec, 'b');
+        ylabel('Qspec');
+        title('Qspec');
+        
+        subplot(4,2,2);
+        plot(Qent, 'r');
+        ylabel('Qent');
+        title('Qent');
+        
+        subplot(4,2,3);
+        plot(Qsfm, 'g');
+        ylabel('Qsfm');
+        title('Qsfm');
+        
+        subplot(4,2,4);
+        plot(Qpksep, 'm');
+        ylabel('Qpksep');
+        title('Qpksep');
+        
+        subplot(4,2,5);
+        plot(Qprom, 'c');
+        ylabel('Qprom');
+        title('Qprom');
+        
+        subplot(4,2,6);
+        plot(Qharm, 'k');
+        ylabel('Qharm');
+        title('Qharm');
+        
+        subplot(4,2,7);
+        plot(Tharm, 'b--');
+        ylabel('Tharm');
+        title('Tharm');
+        
+        subplot(4,2,8);
+        plot(Score, 'r--');
+        ylabel('Score');
+        title('Score');
+        
+        % Titre global
+        sgtitle('ACF Quality Metrics');
+        
         % 1) Barres des scores tous candidats
         figure('Color','w','Name','ACF quality – Scores');
         bar(ranked.Candidate, ranked.Score); grid on
         xlabel('Candidat'); ylabel('Score ACF (0..1)');
         title('Classement par qualité ACF (plus haut = mieux)');
+        figure('Color','w','Name','ACF quality – Scores');
+        bar(Score2); grid on
+        xlabel('Candidat'); ylabel('Score ACF (0..1)');
+        title('Classement par qualité ACF Temporelle');
         
         % 2) Comparaison des métriques pour TopK
         K = min(TopK, M);
@@ -207,13 +290,13 @@ sgtitle('ACF Quality Metrics');
     
     %%
     
-    [~,idxBestScore] = max(Score);
+    [~,idxBestScore] = max(Score2);
     
-    accFir = S_fft(:,idxBestScore);
+%     accFir = S_fft(:,idxBestScore);
     
-    signalEnvelope = getEnv(accFir, Fs, info_fft.fc_Hz(idxBestScore));% res.best.fc BEST.band(1)-50);  %   extracts the envelope
-%     signalEnvelope = getEnvCut(accOrigi, Fs, res.candidates.fc_Hz(idxBestScore));% res.best.fc BEST.band(1)-50);  %   extracts the envelope
-
+%     signalEnvelope = getEnv(accFir, Fs, info_fft.fc_Hz(idxBestScore));% res.best.fc BEST.band(1)-50);  %   extracts the envelope
+    signalEnvelope = getEnvCut(accOrigi, Fs, res.candidates.fc_Hz(idxBestScore),fmax);% res.best.fc BEST.band(1)-50);  %   extracts the envelope
+    
     [AcfIn] = nsdf_mcleod_fast(signalEnvelope, Fs, 0, 160, numel(signalEnvelope));
     
     
@@ -286,30 +369,30 @@ sgtitle('ACF Quality Metrics');
     [candf_hps, Lref] = cand_hps_from_psd_robust(AcfIn, Fs, fmin, fmax, HPS_dfHz, HPS_K);
     candf_hps = Fs/Lref;
     %% Decide
-
+    
     fcands = [candf_yin, candf_comb, candf_hps,candf_mediane];
-%     [f_twm, info] = decide_f0_twm_cepst(AcfIn, Fs, fcands, candf_Cepstrum, ...
-%     'RelPerturb',-0.03:0.005:0.03, ...
-%     'MaxPeaks',50, 'Kmax',18, 'wMode','1/k', ...
-%     'PriorLambda',0.6, 'PriorCents',35, ...
-%     'RefinePct',0.04, 'RefineStep',0.001, ...
-%     'SnapTolRel',0.04);
+    %     [f_twm, info] = decide_f0_twm_cepst(AcfIn, Fs, fcands, candf_Cepstrum, ...
+    %     'RelPerturb',-0.03:0.005:0.03, ...
+    %     'MaxPeaks',50, 'Kmax',18, 'wMode','1/k', ...
+    %     'PriorLambda',0.6, 'PriorCents',35, ...
+    %     'RefinePct',0.04, 'RefineStep',0.001, ...
+    %     'SnapTolRel',0.04);
     f_med = median_harmonic_aligned(fcands,'MaxHarm',4,'TolRel',0.06);
-
-% ---------- 5) Cepstrum reconciliation (only if already close)
-f_snap = f_med; snapped=false; snap_m=1;
-SnapTolRel = 0.06;
-if isfinite(candf_Cepstrum) && candf_Cepstrum>0
-    M = [0.5 1 2 3 4].';
-    f_targets = candf_Cepstrum .* M;
-    relerr = abs(f_med - f_targets) ./ max(f_med, eps);
-    [emin, idxm] = min(relerr);
-    if emin <= SnapTolRel
-        candf_Cepstrum = f_targets(idxm);
-        snapped = true;
-        snap_m = M(idxm);
+    
+    % ---------- 5) Cepstrum reconciliation (only if already close)
+    f_snap = f_med; snapped=false; snap_m=1;
+    SnapTolRel = 0.06;
+    if isfinite(candf_Cepstrum) && candf_Cepstrum>0
+        M = [0.5 1 2 3 4].';
+        f_targets = candf_Cepstrum .* M;
+        relerr = abs(f_med - f_targets) ./ max(f_med, eps);
+        [emin, idxm] = min(relerr);
+        if emin <= SnapTolRel
+            candf_Cepstrum = f_targets(idxm);
+            snapped = true;
+            snap_m = M(idxm);
+        end
     end
-end
     
     
     
@@ -420,7 +503,7 @@ xEnv = xEnv - mean(xEnv);
 end
 
 
-function xEnv = getEnvCut(signal, Fs, cutOff)
+function xEnv = getEnvCut(signal, Fs, cutOff , F_lowPass)
 % Extract the Envelope of a Signal Using Complex Demodulation
 % Parameters:
 %   signal: The input signal from which to extract the envelope.
@@ -439,7 +522,7 @@ x0 = signal .* exp(-1i * 2 * pi * cutOff * t);
 
 % Design a low-pass FIR filter
 % The effective cut-off frequency is halved as the signal is shifted to baseband
-b = fir1(FilterOrder,  150 / Fs/2);
+b = fir1(FilterOrder,  F_lowPass / Fs/2);
 
 % Apply the low-pass filter
 % The filter is applied to extract the low-frequency components (envelope)
@@ -1728,14 +1811,14 @@ end
 % function M = acf_quality_metrics2(r, Opt)
 % % Qualité d'une ACF (sans Qacf), robustifiée.
 % % Sortie M: struct avec Qspec, Qent, Qsfm, Qpksep, Qprom (+ debug)
-% 
+%
 % if nargin<2, Opt = struct; end
 % DEF = struct('IgnoreDC', true, 'BaselineFrac', 0.01, 'MedianLenMin', 5, ...
 %     'Taper', true, 'Win', 'tukey', 'TukeyAlpha', 0.1, ...
 %     'MinPeakDistBins', 2);
 % fn = fieldnames(DEF);
 % for k=1:numel(fn), if ~isfield(Opt,fn{k}), Opt.(fn{k}) = DEF.(fn{k}); end, end
-% 
+%
 % r = r(:);
 % r = r - mean(r,'omitnan');
 % if ~isempty(r) && r(1) ~= 0
@@ -1747,7 +1830,7 @@ end
 % if N < 16
 %     M = empty_out_acf_metrics(); return;
 % end
-% 
+%
 % if Opt.Taper
 %     switch lower(Opt.Win)
 %         case 'hann'
@@ -1757,7 +1840,7 @@ end
 %     end
 %     r = r .* w;
 % end
-% 
+%
 % Rspec = abs(fft(r)).^2;
 % Rspec = Rspec(1:floor(N/2));
 % if Opt.IgnoreDC && ~isempty(Rspec)
@@ -1767,27 +1850,27 @@ end
 %         Rspec(1) = 0;
 %     end
 % end
-% 
+%
 % Lb = max(Opt.MedianLenMin, round(Opt.BaselineFrac * numel(Rspec)));
 % base = movmedian(Rspec, Lb, 'omitnan');
 % Rs = max(Rspec - base, 0);
-% 
+%
 % S = sum(Rs);
 % if S <= 0
 %     M = empty_out_acf_metrics(); return;
 % end
-% 
+%
 % Qspec = max(Rs) / S;
-% 
+%
 % ps = Rs / S; ps = ps(ps>0);
 % H  = -sum(ps .* log(ps));
 % Hmax = log(max(numel(ps),1));
 % Qent = 1 - H / max(Hmax, eps);
-% 
+%
 % AF = mean(Rs);
 % GF = exp(mean(log(Rs + eps)));
 % Qsfm = 1 - min(GF/AF, 1);
-% 
+%
 % [pkVals, pkLocs] = findpeaks(Rs, 'MinPeakDistance', Opt.MinPeakDistBins);
 % pkVals = sort(pkVals, 'descend');
 % if numel(pkVals) >= 2
@@ -1798,7 +1881,7 @@ end
 % else
 %     Qpksep = 0;
 % end
-% 
+%
 % if ~isempty(pkLocs)
 %     [~, imax] = max(Rs);
 %     [~, ~, ~, prom] = findpeaks(Rs, 'MinPeakDistance', Opt.MinPeakDistBins);
@@ -1807,7 +1890,7 @@ end
 % else
 %     Qprom = 0;
 % end
-% 
+%
 % M = struct('Qspec', Qspec, ...
 %     'Qent',  Qent, ...
 %     'Qsfm',  Qsfm, ...
@@ -1848,7 +1931,7 @@ DEF = struct( ...
     'Harm_AlphaZC',   0.6, ...   % sévérité pénalité ZC
     'Harm_ZcSmooth',  [],  ...   % longueur lissage baseline ZC (par défaut 0.1*T)
     'Harm_ZcMinSeg',  [] ...     % min longueur segment ZC (par défaut 0.5*T)
-);
+    );
 fn = fieldnames(DEF); for k=1:numel(fn), if ~isfield(Opt,fn{k}), Opt.(fn{k})=DEF.(fn{k}); end, end
 
 % --------- prétraitement ---------
@@ -1998,19 +2081,19 @@ Qharm2 = Sbest / max(Sbest + max(Smed, eps), eps);
 
 % --------- sorties ---------
 M = struct('Qspec',Qspec,'Qent',Qent,'Qsfm',Qsfm,'Qpksep',Qpksep,'Qprom',Qprom, ...
-           'Qharm',Qharm2,'Tharm',Tbest, ...
-           'peaks', struct('locs', pkLocs, 'vals', pkVals), ...
-           'debug', struct('Rspec',Rspec,'Rs',Rs,'baselineLen',Lb, ...
-                           'harm', struct('Tcands',Tcands,'ScoreBase',S0,'ScoreFinal',S2, ...
-                                          'Regularity',Reg,'Coverage',Cov,'UsedK',Used,'ZC',ZC,'T0',T0)));
+    'Qharm',Qharm2,'Tharm',Tbest, ...
+    'peaks', struct('locs', pkLocs, 'vals', pkVals), ...
+    'debug', struct('Rspec',Rspec,'Rs',Rs,'baselineLen',Lb, ...
+    'harm', struct('Tcands',Tcands,'ScoreBase',S0,'ScoreFinal',S2, ...
+    'Regularity',Reg,'Coverage',Cov,'UsedK',Used,'ZC',ZC,'T0',T0)));
 
 end
 
 % ===== helpers =====
 function M = empty_out_metrics()
 M = struct('Qspec',0,'Qent',0,'Qsfm',0,'Qpksep',0,'Qprom',0,'Qharm2',0,'Tharm',NaN, ...
-           'peaks',struct('locs',[],'vals',[]), ...
-           'debug',struct('Rspec',[],'Rs',[],'baselineLen',[],'harm',struct()));
+    'peaks',struct('locs',[],'vals',[]), ...
+    'debug',struct('Rspec',[],'Rs',[],'baselineLen',[],'harm',struct()));
 end
 
 function [S, reg, cov, used, vals, idxs] = local_score_used(r, T, K, tolRel, thrAbs, w, N)
@@ -2899,7 +2982,7 @@ f_med = median(f_aligned);
 end
 
 
-function M = acf_temporal_metrics(r, Opt)
+function [M,Score] = acf_temporal_metrics(r, Opt)
 %ACF_TEMPORAL_METRICS  Temporal-quality metrics for an autocorrelation function (ACF).
 %
 %   M = acf_temporal_metrics(r, Opt)
@@ -2938,220 +3021,492 @@ function M = acf_temporal_metrics(r, Opt)
 %     - Si vous n’avez que la demi-ACF (lags >= 0), la “symétrie” n’est pas évaluée ici.
 %     - Utilise findpeaks (Signal Processing Toolbox).
 
-    if nargin < 2, Opt = struct; end
-    DEF.MinPromFrac     = 0.02;
-    DEF.MinPeakDistance = 2;
-    DEF.NPeaksForStats  = 8;
-    DEF.PersistenceFrac = 0.20;
-    DEF.Weight = struct('Regularity', 0.30, 'P2B', 0.30, 'DecayR2', 0.15, ...
-                        'PromQuality', 0.10, 'ZCPerInt', 0.10, 'Anti2T', 0.30);
-    Opt = filldefs(Opt, DEF);
+if nargin < 2, Opt = struct; end
+DEF.MinPromFrac     = 0.02;
+DEF.MinPeakDistance = 2;
+DEF.NPeaksForStats  = 8;
+DEF.PersistenceFrac = 0.20;
+DEF.Weight = struct('Regularity', 0.30, 'P2B', 0.30, 'DecayR2', 0.15, ...
+    'PromQuality', 0.10, 'ZCPerInt', 0.10, 'Anti2T', 0.30);
+Opt = filldefs(Opt, DEF);
 
-    r = r(:);
-    N = numel(r);
-    if N < 5
-        error('ACF too short.');
-    end
+r = r(:);
+N = numel(r);
+if N < 5
+    error('ACF too short.');
+end
 
-    % Normalisation douce (utile si r(1) ~= 1)
-    if r(1) ~= 0
-        r = r / max(abs(r(1)), eps);
-    end
+% Normalisation douce (utile si r(1) ~= 1)
+if r(1) ~= 0
+    r = r / max(abs(r(1)), eps);
+end
 
-    % --- Détection de pics (on ignore le pic à lag=0) ---
-    rpos = r;                           % on travaille sur r tel quel (ACF peut être négative après)
-    maxpos = max(rpos(2:end));          % max hors lag=0
-    promTh = Opt.MinPromFrac * max(maxpos, eps);
+% --- Détection de pics (on ignore le pic à lag=0) ---
+rpos = r;                           % on travaille sur r tel quel (ACF peut être négative après)
+maxpos = max(rpos(2:end));          % max hors lag=0
+promTh = Opt.MinPromFrac * max(maxpos, eps);
 
-    [pks, locs, w, prom] = findpeaks(rpos, ...
-        'MinPeakProminence', promTh, ...
-        'MinPeakDistance',   Opt.MinPeakDistance);
+[pks, locs, w, prom] = findpeaks(rpos, ...
+    'MinPeakProminence', promTh, ...
+    'MinPeakDistance',   Opt.MinPeakDistance);
 
-    % Retirer le pic à lag=0 s'il est détecté
-    maskLag0 = (locs == 1);
-    pks(maskLag0)  = [];
-    locs(maskLag0) = [];
-    w(maskLag0)    = [];
-    prom(maskLag0) = [];
+% Retirer le pic à lag=0 s'il est détecté
+maskLag0 = (locs == 1);
+pks(maskLag0)  = [];
+locs(maskLag0) = [];
+w(maskLag0)    = [];
+prom(maskLag0) = [];
 
-    % Si aucun pic détecté, on renvoie des métriques minimales
-    if isempty(pks)
-        M = emptyOut();
-        M.Score = 0;
-        return;
-    end
+% Si aucun pic détecté, on renvoie des métriques minimales
+if isempty(pks)
+    M = emptyOut();
+    M.Score = 0;
+    return;
+end
 
-    % Garder seulement les premiers NPeaksForStats pour des stats robustes
-    K = min(Opt.NPeaksForStats, numel(pks));
-    pksK  = pks(1:K);
-    locsK = locs(1:K);
-    promK = prom(1:K);
+% Garder seulement les premiers NPeaksForStats pour des stats robustes
+K = min(Opt.NPeaksForStats, numel(pks));
+pksK  = pks(1:K);
+locsK = locs(1:K);
+promK = prom(1:K);
 
-    % --- Pic 1 & 2 ---
-    M.pk1  = pksK(1);
-    M.lag1 = locsK(1);
-    if K >= 2
-        M.pk2  = pksK(2);
-        M.lag2 = locsK(2);
-    else
-        M.pk2  = NaN;
-        M.lag2 = NaN;
-    end
-    M.first_second_ratio = M.pk2 / M.pk1;
+% --- Pic 1 & 2 ---
+M.pk1  = pksK(1);
+M.lag1 = locsK(1);
+if K >= 2
+    M.pk2  = pksK(2);
+    M.lag2 = locsK(2);
+else
+    M.pk2  = NaN;
+    M.lag2 = NaN;
+end
+M.first_second_ratio = M.pk2 / M.pk1;
 
-    % --- Régularité des intervalles de pics ---
-    if numel(locsK) >= 2
-        intervals = diff(locsK);
-        M.intervals_mean = mean(intervals);
-        M.intervals_std  = std(intervals);
-        cv = M.intervals_std / max(M.intervals_mean, eps);
-        M.regularity = 1 / (1 + cv);  % 1 = parfait, ~0 = mauvais
-        M.period_est_samples = round(M.intervals_mean);
-    else
-        M.intervals_mean = NaN;
-        M.intervals_std  = NaN;
-        M.regularity = 0;
-        M.period_est_samples = NaN;
-    end
+% --- Régularité des intervalles de pics ---
+if numel(locsK) >= 2
+    intervals = diff(locsK);
+    M.intervals_mean = mean(intervals);
+    M.intervals_std  = std(intervals);
+    cv = M.intervals_std / max(M.intervals_mean, eps);
+    M.regularity = 1 / (1 + cv);  % 1 = parfait, ~0 = mauvais
+    M.period_est_samples = round(M.intervals_mean);
+else
+    M.intervals_mean = NaN;
+    M.intervals_std  = NaN;
+    M.regularity = 0;
+    M.period_est_samples = NaN;
+end
 
-    % --- Passages par zéro ---
-    M.zero_crossings = countZeroCrossings(r);
-    M.zc_rate        = M.zero_crossings / (N-1);
+% --- Passages par zéro ---
+M.zero_crossings = countZeroCrossings(r);
+M.zc_rate        = M.zero_crossings / (N-1);
 
-    % ZC "par intervalle de pics" ~ attendu ~ 1 ; < 1 -> risque 2T
-    if numel(locsK) >= 2
-        zc_per_int = zeros(numel(intervals),1);
-        for i = 1:numel(intervals)
-            a = locsK(i);
-            b = locsK(i+1);
-            if b > a
-                zc_per_int(i) = countZeroCrossings(r(a:b));
-            else
-                zc_per_int(i) = 0;
-            end
+% ZC "par intervalle de pics" ~ attendu ~ 1 ; < 1 -> risque 2T
+if numel(locsK) >= 2
+    zc_per_int = zeros(numel(intervals),1);
+    for i = 1:numel(intervals)
+        a = locsK(i);
+        b = locsK(i+1);
+        if b > a
+            zc_per_int(i) = countZeroCrossings(r(a:b));
+        else
+            zc_per_int(i) = 0;
         end
-        M.zc_per_interval = mean(zc_per_int);
-    else
-        M.zc_per_interval = NaN;
     end
+    M.zc_per_interval = mean(zc_per_int);
+else
+    M.zc_per_interval = NaN;
+end
 
-    % --- Peak-to-Background (pk1 / RMS hors pics) ---
-    bgMask = true(N,1);
-    % Exclure petites fenêtres autour des K premiers pics pour mesurer le "bruit"
-    halfWin = max(round(0.2 * M.period_est_samples), 2); % fenêtre ~20% de la période estimée
-    if isnan(halfWin) || halfWin < 2, halfWin = 2; end
-    for i = 1:K
-        a = max(locsK(i)-halfWin, 1);
-        b = min(locsK(i)+halfWin, N);
-        bgMask(a:b) = false;
-    end
-    bgMask(1:2) = false; % ignore proche de lag 0
-    bg = r(bgMask);
-    if isempty(bg)
-        bg = r(2:end);
-    end
-    bgRMS = sqrt(mean(bg.^2));
-    M.p2b = M.pk1 / max(bgRMS, eps);
+% --- Peak-to-Background (pk1 / RMS hors pics) ---
+bgMask = true(N,1);
+% Exclure petites fenêtres autour des K premiers pics pour mesurer le "bruit"
+halfWin = max(round(0.2 * M.period_est_samples), 2); % fenêtre ~20% de la période estimée
+if isnan(halfWin) || halfWin < 2, halfWin = 2; end
+for i = 1:K
+    a = max(locsK(i)-halfWin, 1);
+    b = min(locsK(i)+halfWin, N);
+    bgMask(a:b) = false;
+end
+bgMask(1:2) = false; % ignore proche de lag 0
+bg = r(bgMask);
+if isempty(bg)
+    bg = r(2:end);
+end
+bgRMS = sqrt(mean(bg.^2));
+M.p2b = M.pk1 / max(bgRMS, eps);
 
-    % --- Prominence: moyenne et dispersion ---
-    M.prom_mean    = mean(promK);
-    M.prom_std     = std(promK);
-    M.prom_quality = M.prom_mean / max(M.prom_std, eps);  % grand = pics “propres” et consistants
+% --- Prominence: moyenne et dispersion ---
+M.prom_mean    = mean(promK);
+M.prom_std     = std(promK);
+M.prom_quality = M.prom_mean / max(M.prom_std, eps);  % grand = pics “propres” et consistants
 
-    % --- Décroissance d’enveloppe (exponentielle) ---
-    % Ajuster pk(k) ~ A * exp(-b*k)  => log(pk) ~ log(A) - b*k
-    if K >= 3 && all(pksK > 0)
-        x = (1:K).';
-        y = log(pksK);
-        X = [ones(K,1), -x];
-        beta = X \ y;
-        yhat = X * beta;
-        SSres = sum((y - yhat).^2);
-        SStot = sum((y - mean(y)).^2);
-        M.decay_R2 = max(0, 1 - SSres / max(SStot, eps));  % 0..1
-    else
-        M.decay_R2 = 0;
-    end
+% --- Décroissance d’enveloppe (exponentielle) ---
+% Ajuster pk(k) ~ A * exp(-b*k)  => log(pk) ~ log(A) - b*k
+if K >= 3 && all(pksK > 0)
+    x = (1:K).';
+    y = log(pksK);
+    X = [ones(K,1), -x];
+    beta = X \ y;
+    yhat = X * beta;
+    SSres = sum((y - yhat).^2);
+    SStot = sum((y - mean(y)).^2);
+    M.decay_R2 = max(0, 1 - SSres / max(SStot, eps));  % 0..1
+else
+    M.decay_R2 = 0;
+end
 
-    % --- Persistance des oscillations ---
-    thr = Opt.PersistenceFrac * M.pk1;
-    M.persistence_count = sum(pksK >= thr);
+% --- Persistance des oscillations ---
+thr = Opt.PersistenceFrac * M.pk1;
+M.persistence_count = sum(pksK >= thr);
 
-    % --- Détecteur 2T (alternance des pics) ---
-    oddIdx  = 1:2:K;
-    evenIdx = 2:2:K;
-    if ~isempty(evenIdx)
-        muOdd  = mean(pksK(oddIdx));
-        muEven = mean(pksK(evenIdx));
-        muAll  = mean(pksK);
-        M.altPeaksScore = abs(muOdd - muEven) / max(muAll, eps); % grand => alternance marquée
-    else
-        M.altPeaksScore = 0;
-    end
+% --- Détecteur 2T (alternance des pics) ---
+oddIdx  = 1:2:K;
+evenIdx = 2:2:K;
+if ~isempty(evenIdx)
+    muOdd  = mean(pksK(oddIdx));
+    muEven = mean(pksK(evenIdx));
+    muAll  = mean(pksK);
+    M.altPeaksScore = abs(muOdd - muEven) / max(muAll, eps); % grand => alternance marquée
+else
+    M.altPeaksScore = 0;
+end
 
-    % Heuristique 2T : si zc_per_interval << 1 ou alternance marquée -> suspect
-    twoT_from_zc   = (~isnan(M.zc_per_interval)) && (M.zc_per_interval < 0.8);
-    twoT_from_alt  = (M.altPeaksScore > 0.35);
-    M.Flags.Suspect2T = (twoT_from_zc || twoT_from_alt);
+% Heuristique 2T : si zc_per_interval << 1 ou alternance marquée -> suspect
+twoT_from_zc   = (~isnan(M.zc_per_interval)) && (M.zc_per_interval < 0.8);
+twoT_from_alt  = (M.altPeaksScore > 0.35);
+M.Flags.Suspect2T = (twoT_from_zc || twoT_from_alt);
 
-    % --- Score global (pondéré) ---
-    W = Opt.Weight;
-    % Bonus positifs
-    score_pos = ...
-        W.Regularity  * clip01(M.regularity) + ...
-        W.P2B         * tanhSafe(M.p2b / 5) + ...              % compresse pour stabilité
-        W.DecayR2     * clip01(M.decay_R2) + ...
-        W.PromQuality * tanhSafe(M.prom_quality / 5) + ...
-        W.ZCPerInt    * tanhSafe( M.zc_per_interval / 1.0 );   % ~1 idéal
+% --- Score global (pondéré) ---
+W = Opt.Weight;
+% Bonus positifs
+score_pos = ...
+    W.Regularity  * clip01(M.regularity) + ...
+    W.P2B         * tanhSafe(M.p2b / 5) + ...              % compresse pour stabilité
+    W.DecayR2     * clip01(M.decay_R2) + ...
+    W.PromQuality * tanhSafe(M.prom_quality / 5) + ...
+    W.ZCPerInt    * tanhSafe( M.zc_per_interval / 1.0 );   % ~1 idéal
 
-    % Pénalité 2T
-    penalty_2T = W.Anti2T * tanhSafe( M.altPeaksScore / 0.5 ) ...
-               + W.Anti2T * tanhSafe( max(0, 1 - M.zc_per_interval) / 0.5 );
+Score = struct('Regularity',clip01(M.regularity),'P2B',tanhSafe(M.p2b / 5),'DecayR2',clip01(M.decay_R2),'PromQuality',tanhSafe(M.prom_quality / 5), ...
+    'ZCPerInt',tanhSafe( M.zc_per_interval / 1.0 ),'score_pos',score_pos,'Suspect2T',M.Flags.Suspect2T);
 
-    M.Score = max(0, score_pos - penalty_2T);
+% Pénalité 2T
+penalty_2T = W.Anti2T * tanhSafe( M.altPeaksScore / 0.5 ) ...
+    + W.Anti2T * tanhSafe( max(0, 1 - M.zc_per_interval) / 0.5 );
+
+M.Score = max(0, score_pos);
 end
 
 % -------------------------- Helpers --------------------------
-function v = clip01(x), v = min(1, max(0, x)); end
+% function v = clip01(x), v = min(1, max(0, x)); end
 
 function y = tanhSafe(x)
-    % bornage doux pour éviter des scores démesurés
-    y = tanh(x);
+% bornage doux pour éviter des scores démesurés
+y = tanh(x);
 end
 
 function nz = countZeroCrossings(x)
-    x = x(:);
-    s = sign(x);
-    s(s==0) = 1; % éviter transitions “0” ambiguës
-    nz = sum(s(1:end-1) .* s(2:end) < 0);
+x = x(:);
+s = sign(x);
+s(s==0) = 1; % éviter transitions “0” ambiguës
+nz = sum(s(1:end-1) .* s(2:end) < 0);
 end
 
 function S = emptyOut()
-    S = struct('pk1',NaN,'pk2',NaN,'lag1',NaN,'lag2',NaN, ...
-               'intervals_mean',NaN,'intervals_std',NaN,'regularity',0, ...
-               'zero_crossings',0,'zc_rate',0,'zc_per_interval',NaN, ...
-               'p2b',0,'prom_mean',NaN,'prom_std',NaN,'prom_quality',0, ...
-               'decay_R2',0,'altPeaksScore',0,'first_second_ratio',NaN, ...
-               'persistence_count',0,'period_est_samples',NaN, ...
-               'Score',0,'Flags',struct('Suspect2T',false));
+S = struct('pk1',NaN,'pk2',NaN,'lag1',NaN,'lag2',NaN, ...
+    'intervals_mean',NaN,'intervals_std',NaN,'regularity',0, ...
+    'zero_crossings',0,'zc_rate',0,'zc_per_interval',NaN, ...
+    'p2b',0,'prom_mean',NaN,'prom_std',NaN,'prom_quality',0, ...
+    'decay_R2',0,'altPeaksScore',0,'first_second_ratio',NaN, ...
+    'persistence_count',0,'period_est_samples',NaN, ...
+    'Score',0,'Flags',struct('Suspect2T',false));
 end
 
+% function Opt = filldefs(Opt, DEF)
+%     fn = fieldnames(DEF);
+%     for k = 1:numel(fn)
+%         f = fn{k};
+%         if ~isfield(Opt, f) || isempty(Opt.(f))
+%             Opt.(f) = DEF.(f);
+%         elseif isstruct(DEF.(f))
+%             % merge sub-struct (e.g., Weight)
+%             subfn = fieldnames(DEF.(f));
+%             for j = 1:numel(subfn)
+%                 sf = subfn{j};
+%                 if ~isfield(Opt.(f), sf) || isempty(Opt.(f).(sf))
+%                     Opt.(f).(sf) = DEF.(f).(sf);
+%                 end
+%             end
+%         end
+%     end
+% end
+
+function [T_hat, labels, k_nearest, weights, score, details] = acf_period_consensus_from_metrics(MetricsArray,weights, Opt)
+%ACF_PERIOD_CONSENSUS_FROM_METRICS
+%  Fusionne des métriques temporelles d'ACF en poids, puis estime T par consensus.
+%
+% INPUT
+%   MetricsArray : tableau struct de M (un par ACF) tel que renvoyé par acf_temporal_metrics
+%                  (doit contenir au moins: period_est_samples, regularity, p2b,
+%                   prom_quality, decay_R2, zc_per_interval, Flags.Suspect2T, altPeaksScore)
+%   Opt (optionnel):
+%       .TolFrac   (def 0.08)  -> transmis à infer_base_period
+%       .MaxMult   (def 6)     -> transmis à infer_base_period
+%       .W         (struct)    -> poids de fusion des métriques (cf. build_weights_from_metrics)
+%
+% OUTPUT
+%   T_hat, labels, k_nearest, weights, score, details  (voir infer_base_period + poids calculés)
+
+if nargin < 3, Opt = struct; end
+DEF.TolFrac = 0.08;
+DEF.MaxMult = 6;
+%     DEF.W = struct('Regularity', 0.35, 'P2B', 0.30, 'PromQuality', 0.10, ...
+%                    'DecayR2', 0.10, 'ZCPerInt', 0.15, 'Anti2T', 0.50);
+Opt = filldefs(Opt, DEF);
+
+% 1) Extraire les periods estimées (intervals_mean) de chaque ACF
+n = numel(MetricsArray);
+L = nan(n,1);
+for i = 1:n
+    L(i) = MetricsArray(i);
+end
+
+% 2) Construire des poids à partir des métriques
+%     weights = build_weights_from_metrics(MetricsArray, Opt.W);
+
+% 3) Appeler le solveur de consensus sur T
+p = struct('TolFrac', Opt.TolFrac, 'MaxMult', Opt.MaxMult, 'Weights', weights);
+[T_hat, labels, k_nearest, score, details] = infer_base_period(L, p);
+
+% 4) Option: post-traitement "2T guard"
+%    Si k=2 mais la courbe n'est PAS suspecte 2T, on annote la confiance.
+for i = 1:n
+    if k_nearest(i) == 2 && isfield(MetricsArray(i),'Flags') && isfield(MetricsArray(i).Flags,'Suspect2T')
+        if ~MetricsArray(i).Flags.Suspect2T
+            labels{i} = '2T (low-confidence)';  % ambiguïté signalée
+        end
+    end
+end
+end
+
+% --------- helper: pondération à partir des métriques temporelles ----------
+function w = build_weights_from_metrics(M, W)
+%BUILD_WEIGHTS_FROM_METRICS  Calcule un poids par ACF à partir des métriques.
+%  Les termes positifs sont compressés par tanh pour robustesse; les pénalités 2T
+%  réduisent le poids. Le résultat est normalisé pour sommer à 1.
+
+n = numel(M);
+if n == 0, w = []; return; end
+
+reg   = zeros(n,1);   % regularity in [0,1] (déjà borné)
+p2b   = zeros(n,1);   % pic/bruit (non borné -> tanh)
+pq    = zeros(n,1);   % prom_quality (non borné -> tanh)
+r2    = zeros(n,1);   % decay_R2 in [0,1]
+zcpi  = zeros(n,1);   % zc_per_interval ~ 1 pour T
+alt2T = zeros(n,1);   % altPeaksScore (grand si alternance -> 2T)
+sus2T = false(n,1);   % flag suspect 2T
+
+for i = 1:n
+    reg(i)   = safeget(M(i), 'regularity', 0);
+    p2b(i)   = safeget(M(i), 'p2b', 0);
+    pq(i)    = safeget(M(i), 'prom_quality', 0);
+    r2(i)    = safeget(M(i), 'decay_R2', 0);
+    zcpi(i)  = safeget(M(i), 'zc_per_interval', 0);
+    alt2T(i) = safeget(M(i), 'altPeaksScore', 0);
+    sus2T(i) = safegetflag(M(i), 'Flags', 'Suspect2T', false);
+end
+
+% bornages / compressions
+reg  = clip01(reg);
+r2   = clip01(r2);
+zcpi = max(0, zcpi);               % on évite négatif
+p2bN = tanh(p2b / 5);              % compresse large dynamique
+pqN  = tanh(pq  / 5);
+
+% score positif
+pos = W.Regularity*reg + W.P2B*p2bN + W.PromQuality*pqN + W.DecayR2*r2 + W.ZCPerInt*tanh(zcpi/1.0);
+
+% pénalités 2T (plus altPeaksScore est grand, plus on pénalise ;
+% si zc_per_interval << 1, on pénalise aussi)
+pen_alt = W.Anti2T * tanh(alt2T / 0.5);
+pen_zc  = W.Anti2T * tanh(max(0, 1 - zcpi) / 0.5);
+pen_flag= W.Anti2T * (sus2T * 0.6);   % pénalité fixe si flag 2T
+
+raw = pos - (pen_alt + pen_zc + pen_flag);
+raw = max(0, raw);          % pas de poids négatifs
+if all(raw == 0)
+    w = ones(n,1)/n;        % fallback uniforme
+else
+    w = raw / sum(raw);
+end
+end
+
+% --------- petits utilitaires ----------
+function v = safeget(S, f, d)
+if isfield(S, f) && ~isempty(S.(f)) && isfinite(S.(f))
+    v = S.(f);
+else
+    v = d;
+end
+end
+
+function v = safegetflag(S, f1, f2, d)
+if isfield(S, f1) && isstruct(S.(f1)) && isfield(S.(f1), f2) && ~isempty(S.(f1).(f2))
+    v = logical(S.(f1).(f2));
+else
+    v = d;
+end
+end
+
+function x = clip01(x), x = min(1, max(0, x)); end
+
 function Opt = filldefs(Opt, DEF)
-    fn = fieldnames(DEF);
-    for k = 1:numel(fn)
-        f = fn{k};
-        if ~isfield(Opt, f) || isempty(Opt.(f))
-            Opt.(f) = DEF.(f);
-        elseif isstruct(DEF.(f))
-            % merge sub-struct (e.g., Weight)
-            subfn = fieldnames(DEF.(f));
-            for j = 1:numel(subfn)
-                sf = subfn{j};
-                if ~isfield(Opt.(f), sf) || isempty(Opt.(f).(sf))
-                    Opt.(f).(sf) = DEF.(f).(sf);
-                end
+fn = fieldnames(DEF);
+for k = 1:numel(fn)
+    f = fn{k};
+    if ~isfield(Opt, f) || isempty(Opt.(f))
+        Opt.(f) = DEF.(f);
+    elseif isstruct(DEF.(f))
+        subfn = fieldnames(DEF.(f));
+        for j = 1:numel(subfn)
+            sf = subfn{j};
+            if ~isfield(Opt.(f), sf) || isempty(Opt.(f).(sf))
+                Opt.(f).(sf) = DEF.(f).(sf);
             end
         end
     end
+end
+end
+
+function [T_hat, labels, k_nearest, score, details] = infer_base_period(L, Opt)
+%INFER_BASE_PERIOD  Estime la période de base T à partir d'intervals_mean et classe T vs 2T.
+%
+%   [T_hat, labels, k_nearest, score, details] = infer_base_period(L, Opt)
+%
+% INPUT
+%   L   : vecteur des intervals_mean (un par ACF). Doit être > 0.
+%   Opt : (optionnel) struct avec champs :
+%         .TolFrac     (default 0.08)   tolérance relative sur l'écart au multiple entier
+%         .MaxMult     (default 6)      multiple maximum considéré (k*T avec k<=MaxMult)
+%         .Weights     (default [])     poids par échantillon (même taille que L)
+%         .HypoExpand  (default [1 2 0.5]) génère hypothèses T ~ L, 2L, L/2
+%
+% OUTPUT
+%   T_hat     : estimation finale de la période de base
+%   labels    : cellstr, 'T', '2T', 'kT' (k entier), ou 'outlier'
+%   k_nearest : entier k associé à chaque L(i) (meilleur multiple)
+%   score     : score global du meilleur T (somme des poids d’adhérence)
+%   details   : struct avec champs internes (meilleur k_i, résidus, etc.)
+%
+% Idée : on teste des hypothèses T candidates, on mappe chaque L(i) au multiple entier k_i
+%       le plus proche, on ne garde que ceux dont l'erreur relative <= TolFrac,
+%       on cumule un score pondéré, on choisit la meilleure hypothèse, puis on affine T.
+
+if nargin < 2, Opt = struct; end
+DEF.TolFrac    = 0.08;
+DEF.MaxMult    = 6;
+DEF.Weights    = [];
+DEF.HypoExpand = [1 2 0.5];   % essayer T≈L, 2L, L/2
+Opt = filldefs_base_period(Opt, DEF);
+
+L = L(:);
+L = L(isfinite(L) & L > 0);
+if isempty(L), error('L is empty or invalid.'); end
+
+N = numel(L);
+if isempty(Opt.Weights), w = ones(N,1); else, w = Opt.Weights(:); end
+w = w / sum(w); % normalise
+
+% ---------------------- Génération d'hypothèses brutes ----------------------
+H = [];
+for a = Opt.HypoExpand
+    H = [H; L * a]; %#ok<AGROW>
+end
+% Nettoyage : bornes plausibles
+H = H(isfinite(H) & H > 0);
+H = unique(sort(H));
+
+% ---------------------- Scoring des hypothèses ----------------------
+best = struct('T', NaN, 'score', -Inf, 'k', [], 'mask', [], 'res', []);
+for h = 1:numel(H)
+    Tcand = H(h);
+    % Mappe chaque L(i) vers le multiple entier k_i le plus proche
+    k = round(L / Tcand);
+    k(k < 1) = 1;
+    k(k > Opt.MaxMult) = Opt.MaxMult;
+    
+    Lhat = Tcand * k;
+    relErr = abs(L - Lhat) ./ L;   % erreur relative vs multiple entier
+    inl = (relErr <= Opt.TolFrac);
+    
+    % Score = somme des poids "adhérence", pondérée par la proximité
+    % (plus l'erreur relative est petite, plus on donne de poids)
+    adh = (1 - min(relErr/Opt.TolFrac, 1));  % 1 pour parfait, 0 au seuil
+    sc = sum(w .* adh .* inl);
+    
+    if sc > best.score
+        best.T     = Tcand;
+        best.score = sc;
+        best.k     = k;
+        best.mask  = inl;
+        best.res   = L - Lhat;
+    end
+end
+
+% ---------------------- Affinage de T (moindres carrés pondérés) ----------------------
+% Minimise sum w_i * (L_i - k_i*T)^2  => T = sum(w_i*k_i*L_i) / sum(w_i*k_i^2) sur les inliers
+inl = best.mask;
+k   = best.k;
+if any(inl)
+    num = sum(w(inl) .* k(inl) .* L(inl));
+    den = sum(w(inl) .* (k(inl).^2));
+    T_refined = num / max(den, eps);
+else
+    T_refined = best.T;
+end
+
+% Recalcule affectations avec T_refined
+k2 = round(L / T_refined);
+k2(k2 < 1) = 1;
+k2(k2 > Opt.MaxMult) = Opt.MaxMult;
+Lhat2   = T_refined * k2;
+relErr2 = abs(L - Lhat2) ./ L;
+inl2    = (relErr2 <= Opt.TolFrac);
+
+% Score final recalculé
+adh2  = (1 - min(relErr2/Opt.TolFrac, 1));
+score = sum(w .* adh2 .* inl2);
+
+% ---------------------- Sorties et étiquettes ----------------------
+T_hat      = T_refined;
+k_nearest  = k2;
+labels     = zeros(N,1);
+for i = 1:N
+    if ~inl2(i)
+        labels(i) = 0;
+    else
+        labels(i) = k2(i);
+    end
+end
+
+% détails
+details = struct();
+details.relErr     = relErr2;
+details.inliers    = inl2;
+details.weights    = w;
+details.adherence  = adh2;
+details.maxMult    = Opt.MaxMult;
+details.tolFrac    = Opt.TolFrac;
+end
+
+% ---------- helpers ----------
+function Opt = filldefs_base_period(Opt, DEF)
+fn = fieldnames(DEF);
+for i = 1:numel(fn)
+    f = fn{i};
+    if ~isfield(Opt, f) || isempty(Opt.(f))
+        Opt.(f) = DEF.(f);
+    end
+end
 end
 
